@@ -1,0 +1,49 @@
+:q
+:eval
+:load inputs/sumfac.pot 
+:prog
+:quit
+:eval
+:eval6
+:eval
+:eval
+:eval
+:eval
+:eval
+:load inputs/sumfac.pot 
+:eval
+:load inputs/sumfac.pot 
+:quit 
+:trans 2
+:load inputs/sumfac.pot 
+:trans 3
+:trans 1 
+:trans 1 
+:trans 1 
+:trans 1 
+:trans 1 
+:trans 1 
+:trans 1 
+:trans 1 
+:trans 1 
+:trans 1 
+:translate 1
+:load inputs/sumfac.pot 
+:q
+:term 
+:prog
+:load inputs/sumfac.pot 
+:prog
+:term 
+:load inputs/Nat
+:quit
+:load inputs/Nat.pot
+:load Nat 
+:quit
+:quit
+:Q
+:load inputs/Nat.pot
+:load inputs/Natput 
+:quit
+:load inputs/Nat.pot 
+:load Nat

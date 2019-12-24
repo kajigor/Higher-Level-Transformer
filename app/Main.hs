@@ -50,8 +50,9 @@ toplevel p = do putStr "POT> "
                 hFlush stdout
                 x <-  getLine
                 case command x of
-                   Load f -> g [f] [] []
+                   Load f -> g [directory ++ f] [] []
                              where
+                             directory = "inputs/"
                              g [] ys ds = let ds' = makeFuns ds
                                           in  case lookup "main" ds' of
                                                  Nothing -> do putStrLn "No main function"
@@ -62,7 +63,7 @@ toplevel p = do putStr "POT> "
                                               else do r <- loadFile x
                                                       case r of
                                                          Nothing -> toplevel Nothing
-                                                         Just (fs,ds2) -> g (xs++fs) (x:ys) (ds++ds2)
+                                                         Just (fs,ds2) -> g (xs++ map (directory ++) fs) (x:ys) (ds++ds2)
                    Prog -> case p of
                               Nothing -> do putStrLn "No program loaded"
                                             toplevel p
@@ -113,4 +114,4 @@ loadFile f = do x <-  doesFileExist (f++".pot")
                                              return Nothing
                                 Right t -> return (Just t)
                      else do putStrLn ("No such file: "++f++".pot")
-                             return Nothin
+                             return Nothing

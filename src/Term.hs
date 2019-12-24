@@ -13,7 +13,7 @@ import Text.ParserCombinators.Parsec.Language
 import Debug.Trace
 import System.IO
 import System.Directory
-
+import Prelude hiding ((<>))
 
 data Term = Free String -- free variable
           | Bound Int -- bound variable with de Bruijn index
