@@ -1,0 +1,10 @@
+import Nat 
+
+main = fib n ;
+
+fib n = case n of 
+           Zero -> Succ(Zero)
+         | Succ(n') -> case n' of 
+                          Zero -> Succ(Zero) 
+                        | Succ(n'') -> plus (fib n'') (fib n')
+          
