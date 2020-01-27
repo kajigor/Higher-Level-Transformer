@@ -1,19 +1,20 @@
 module Term where
 
-import Data.Char
-import Data.Maybe
-import Data.List
-import Data.Foldable
-import Control.Monad
-import Text.PrettyPrint.HughesPJ as P
-import Text.ParserCombinators.Parsec
-import Text.ParserCombinators.Parsec.Expr
-import qualified Text.ParserCombinators.Parsec.Token as T
-import Text.ParserCombinators.Parsec.Language
-import Debug.Trace
-import System.IO
-import System.Directory
-import Prelude hiding ((<>))
+import           Control.Monad
+import           Data.Char
+import           Data.Foldable
+import           Data.List
+import           Data.Maybe
+import           Debug.Trace
+import           Prelude                                hiding ((<>))
+import           System.Directory
+import           System.IO
+import           Text.ParserCombinators.Parsec
+import           Text.ParserCombinators.Parsec.Expr
+import           Text.ParserCombinators.Parsec.Language
+import qualified Text.ParserCombinators.Parsec.Token    as T
+import           Text.PrettyPrint.HughesPJ              as P
+import           Text.Printf
 
 data Term = Free String -- free variable
           | Bound Int -- bound variable with de Bruijn index
@@ -58,9 +59,9 @@ data Context = EmptyCtx
 
 -- place term in context
 
-place t EmptyCtx = t
+place t EmptyCtx        = t
 place t (ApplyCtx k ts) = place (Apply t ts) k
-place t (CaseCtx k bs) = place (Case t bs) k
+place t (CaseCtx k bs)  = place (Case t bs) k
 
 match bs bs' = length bs == length bs' && all (\((c,xs,t),(c',xs',t')) -> c == c' && length xs == length xs') (zip bs bs')
 
@@ -133,49 +134,88 @@ dive s1 s2 t t' r = []
 
 -- most specific generalisation of terms
 
-generalise t u = generalise' [] [] t u (free t ++ free u) [] [] []
+-- generalise' s1 s2 (Free x) t fv bv g1 g2 | x `elem` fst(unzip s1) =
+--    let (t',g1',g2') = generalise' [] [] (instantiate s1 (Free x)) (instantiate s2 t) fv bv g1 g2
+--    in  case t' of
+--          Free x' | x' /= x ->
+--             trace ("s1\n" ++ show s1 ++ "\n") $
+--             trace ("s2\n" ++ show s2 ++ "\n") $
+--             trace ("t1:\n" ++ show (instantiate s1 (Free x)) ++ "\n") $
+--             trace ("t2:\n" ++ show (instantiate s2 t) ++ "\n") $
+--             trace ("G1':\n" ++ (intercalate "\n" $ map show g1') ++ "\n") $
+--             trace ("G2':\n" ++ (intercalate "\n" $ map show g2') ++ "\n") $
+--             let looked1 = lookup x' g1' in
+--             let looked2 = lookup x' g2' in
+--             trace ("x:\n" ++ show x ++ "\n")
+--             trace ("x':\n" ++ show x' ++ "\n") $
+--             trace ("Looked1:\n" ++ show looked1 ++ "\n") $
+--             trace ("Looked2:\n" ++ show looked2 ++ "\n") $
+--             (Free x,(x,fromJust (lookup x' g1')):g1,(x,fromJust (lookup x' g2')):g2)
+--          _ -> (t',g1',g2')
 
-generalise' s1 s2 (Free x) t fv bv g1 g2 | x `elem` fst(unzip s1) = let (t',g1',g2') = generalise' [] [] (instantiate s1 (Free x)) (instantiate s2 t) fv bv g1 g2
-                                                                    in  case t' of
-                                                                           Free x' -> (Free x,(x,fromJust (lookup x' g1')):g1,(x,fromJust (lookup x' g2')):g2)
-                                                                           _ -> (t',g1',g2')
+generalise t u =
+   trace (printf "\n=============================================\nGeneralizing\nt:\n%s\n\nu:\n%s\n\n" (show t) (show u)) $
+   generalise' [] [] t u (free t ++ free u) [] [] []
+
+generalise'' s1 s2 t1 t2 fv bv g1 g2 =
+   trace (printf "\n---------------------------------------------\nGeneralisation\nt1:\n%s\n\nt2:\n%s\n\ns1:\n%s\n\ns2:\n%s\n\nfv:\n%s\n\nbv:\n%s\n\ng1:\n%s\n\ng2:\n%s\n\n"(show s1) (show s2) (show t1) (show t2) (show fv) (show bv) (show g1) (show g2)) $
+   generalise' s1 s2 t1 t2 fv bv g1 g2
+
+generalise' s1 s2 (Free x) t fv bv g1 g2 | x `elem` fst(unzip s1) =
+   let (t',g1',g2') = generalise'' [] [] (instantiate s1 (Free x)) (instantiate s2 t) fv bv g1 g2
+   in  case t' of
+         Free x' -> (Free x,(x,fromJust (lookup x' g1')):g1,(x,fromJust (lookup x' g2')):g2)
+         _ -> (t',g1',g2')
 generalise' s1 s2 (Free x) (Free x') fv bv g1 g2 | x==x' = (Free x,g1,g2)
 generalise' s1 s2 (Bound i) (Bound i') fv bv g1 g2 | i==i' = (Bound i,g1,g2)
-generalise' s1 s2 (Lambda x t) (Lambda x' t') fv bv g1 g2 = let x'' = rename (fv++fst(unzip (s2++g2))) x
-                                                                (t'',g1',g2') = generalise' s1 s2 (concrete x'' t) (concrete x'' t') (x'':fv) (x'':bv) g1 g2
-                                                            in  (Lambda x (abstract t'' x''),g1',g2')
-generalise' s1 s2 (Con c ts) (Con c' ts') fv bv g1 g2 | c==c' = let ((g1',g2'),ts'') = mapAccumL (\(g1,g2) (t,t') -> let (t'',g1',g2') = generalise' s1 s2 t t' fv bv g1 g2
-                                                                                                                     in  ((g1',g2'),t'')) (g1,g2) (zip ts ts')
-                                                                in  (Con c ts'',g1',g2')
+generalise' s1 s2 (Lambda x t) (Lambda x' t') fv bv g1 g2 =
+   let x'' = rename (fv++fst(unzip (s2++g2))) x
+       (t'',g1',g2') = generalise'' s1 s2 (concrete x'' t) (concrete x'' t') (x'':fv) (x'':bv) g1 g2
+   in  (Lambda x (abstract t'' x''),g1',g2')
+generalise' s1 s2 (Con c ts) (Con c' ts') fv bv g1 g2 | c==c' =
+   let ((g1',g2'),ts'') =
+         mapAccumL (\(g1,g2) (t,t') ->
+                        let (t'',g1',g2') = generalise'' s1 s2 t t' fv bv g1 g2
+                        in  ((g1',g2'),t'')) (g1,g2) (zip ts ts')
+   in  (Con c ts'',g1',g2')
 generalise' s1 s2 (Fun f) (Fun f') fv bv g1 g2 | f==f' = (Fun f,g1,g2)
 generalise' s1 s2 (Apply (Free x) ts) (Apply (Free x') ts') fv bv g1 g2 | x `elem` bv && x==x' = (Apply (Free x) ts,g1,g2)
-generalise' s1 s2 (Apply t ts) (Apply t' ts') fv bv g1 g2 | not (null (embed t t')) = let (t'',g1',g2') = generalise' s1 s2 t t' fv bv g1 g2
-                                                                                          ((g1'',g2''),ts'') = mapAccumL (\(g1,g2) (t,t') -> let (t'',g1',g2') = generalise' s1 s2 t t' fv bv g1 g2
-                                                                                                                                             in  ((g1',g2'),t'')) (g1',g2') (zip ts ts')
-                                                                                      in  (Apply t'' ts'',g1'',g2'')
-generalise' s1 s2 (Case t bs) (Case t' bs') fv bv g1 g2 | match bs bs' = let (t'',g1',g2') = generalise' s1 s2 t t' fv bv g1 g2
-                                                                             ((g1'',g2''),bs'') = mapAccumL (\(g1,g2) ((c,xs,t),(c',xs',t')) -> let fv' = foldr (\x fv -> let x' = rename (fv++fst(unzip (s2++g2))) x in x':fv) fv xs
-                                                                                                                                                    xs'' = take (length xs) fv'
-                                                                                                                                                    (t'',g1',g2') = generalise' s1 s2 (foldr concrete t xs'') (foldr concrete t' xs'') fv' (xs''++bv) g1 g2
-                                                                                                                                                in ((g1',g2'),(c,xs,foldl abstract t'' xs''))) (g1',g2') (zip bs bs')
-                                                                         in  (Case t'' bs'',g1'',g2'')
-generalise' s1 s2 (Let x t u) (Let x' t' u') fv bv g1 g2 = let x'' = rename (fv++fst(unzip (s2++g2))) x
-                                                               (t'',g1',g2') = generalise' s1 s2 t t' fv bv g1 g2
-                                                               (u'',g1'',g2'') = generalise' s1 s2 (concrete x'' u) (concrete x'' u') fv bv g1' g2'
-                                                            in  (Let x t'' (abstract u'' x''),g1'',g2'')
-generalise' s1 s2 (Letrec f xs t u) (Letrec f' xs' t' u') fv bv g1 g2 | not (null rs) = let xs1 = [renameVar (head rs) x | x <- xs]
-                                                                                            (t'',g1',g2') = generalise' (zip xs1 (args (instantiate s1 u))) (zip xs2 (args (instantiate s2 u'))) (foldr concrete t (x:xs1)) (foldr concrete t' (x:xs2)) (x:xs1++fv) (x:xs1++bv) g1 g2
-                                                                                        in (Letrec f xs1 (foldl abstract t'' (x:xs1)) (Apply (Bound 0) (map Free xs1)),g1',g2')
+generalise' s1 s2 (Apply t ts) (Apply t' ts') fv bv g1 g2 | not (null (embed t t')) =
+   let (t'',g1',g2') = generalise'' s1 s2 t t' fv bv g1 g2
+       ((g1'',g2''),ts'') =
+         mapAccumL (\(g1,g2) (t,t') ->
+                        let (t'',g1',g2') = generalise'' s1 s2 t t' fv bv g1 g2
+                        in  ((g1',g2'),t'')) (g1',g2') (zip ts ts')
+   in  (Apply t'' ts'',g1'',g2'')
+generalise' s1 s2 (Case t bs) (Case t' bs') fv bv g1 g2 | match bs bs' =
+   let (t'',g1',g2') = generalise'' s1 s2 t t' fv bv g1 g2
+       ((g1'',g2''),bs'') =
+          mapAccumL (\(g1,g2) ((c,xs,t),(c',xs',t')) ->
+                        let fv' = foldr (\x fv -> let x' = rename (fv++fst(unzip (s2++g2))) x in x':fv) fv xs
+                            xs'' = take (length xs) fv'
+                            (t'',g1',g2') = generalise'' s1 s2 (foldr concrete t xs'') (foldr concrete t' xs'') fv' (xs''++bv) g1 g2
+                        in ((g1',g2'),(c,xs,foldl abstract t'' xs''))) (g1',g2') (zip bs bs')
+   in  (Case t'' bs'',g1'',g2'')
+generalise' s1 s2 (Let x t u) (Let x' t' u') fv bv g1 g2 =
+   let x'' = rename (fv++fst(unzip (s2++g2))) x
+       (t'',g1',g2') = generalise'' s1 s2 t t' fv bv g1 g2
+       (u'',g1'',g2'') = generalise'' s1 s2 (concrete x'' u) (concrete x'' u') fv bv g1' g2'
+   in  (Let x t'' (abstract u'' x''),g1'',g2'')
+generalise' s1 s2 (Letrec f xs t u) (Letrec f' xs' t' u') fv bv g1 g2 | not (null rs) =
+   let xs1 = [renameVar (head rs) x | x <- xs]
+       (t'',g1',g2') = generalise'' (zip xs1 (args (instantiate s1 u))) (zip xs2 (args (instantiate s2 u'))) (foldr concrete t (x:xs1)) (foldr concrete t' (x:xs2)) (x:xs1++fv) (x:xs1++bv) g1 g2
+   in (Letrec f xs1 (foldl abstract t'' (x:xs1)) (Apply (Bound 0) (map Free xs1)),g1',g2')
    where x:fv' = foldr (\x fv -> let x' = rename (fv++fst(unzip (s2++g2))) x in x':fv) fv (f:xs')
          xs2 = take (length xs') fv'
          rs = embed (foldr concrete t xs) (foldr concrete t' xs2)
-generalise' s1 s2 t u fv bv g1 g2 = let xs = intersect (free t) bv
-                                        t' = instantiate s1 (foldl (\t x -> Lambda x (abstract t x)) t xs)
-                                        u' = instantiate s2 (foldl (\t x -> Lambda x (abstract t x)) u xs)
-                                    in  case find (\(x,t) -> t==t' && (lookup x g2 == Just u')) g1 of
-                                           Just (x,t) -> (makeApplication (Free x) (map Free xs),g1,g2)
-                                           Nothing -> let x = rename (fv++fst(unzip (s2++g2))) "x"
-                                                      in  (makeApplication (Free x) (map Free xs),(x,t'):g1,(x,u'):g2)
+generalise' s1 s2 t u fv bv g1 g2 =
+   let xs = intersect (free t) bv
+       t' = instantiate s1 (foldl (\t x -> Lambda x (abstract t x)) t xs)
+       u' = instantiate s2 (foldl (\t x -> Lambda x (abstract t x)) u xs)
+   in  case find (\(x,t) -> t==t' && (lookup x g2 == Just u')) g1 of
+         Just (x,t) -> (makeApplication (Free x) (map Free xs),g1,g2)
+         Nothing -> let x = rename (fv++fst(unzip (s2++g2))) "x"
+                    in  (makeApplication (Free x) (map Free xs),(x,t'):g1,(x,u'):g2)
 
 makeLet s t = foldl (\u (x,t) -> Let x t (abstract u x)) t s
 
@@ -365,7 +405,7 @@ renameTerm r (Letrec f xs t u) = Letrec f xs (renameTerm r t) (renameTerm r u)
 
 redex (Apply t u) = redex t
 redex (Case t bs) = redex t
-redex t = t
+redex t           = t
 
 
 -- function name and args
@@ -439,19 +479,19 @@ prettyProg' [] = empty
 prettyProg' [(f,(xs,t))] = text f <+> hsep (map text xs) <+> equals <+> prettyTerm t
 prettyProg' ((f,(xs,t)):fs) = text f <+> hsep (map text xs) <+> equals <+> prettyTerm t <> semi $$ prettyProg' fs
 
-isList (Con "Nil" []) = True
+isList (Con "Nil" [])     = True
 isList (Con "Cons" [h,t]) = isList t
-isList _ = False
+isList _                  = False
 
-list2con [] = Con "Nil" []
+list2con []    = Con "Nil" []
 list2con (h:t) = Con "Cons" [h,list2con t]
 
-con2list (Con "Nil" [])  = []
+con2list (Con "Nil" [])     = []
 con2list (Con "Cons" [h,t]) = h:con2list t
 
-isNat (Con "Zero" []) = True
+isNat (Con "Zero" [])  = True
 isNat (Con "Succ" [n]) = isNat n
-isNat _ = False
+isNat _                = False
 
 nat2con 0 = Con "Zero" []
 nat2con n = Con "Succ" [nat2con $ n-1]
